@@ -1,0 +1,6 @@
+This is an R script containing frequently used statistical analyses, including:
+1. Descriptive statistics (by Kaiyu Huang)
+2. t-test (by Longfei He)
+3. Correlation & Regression analysis (by Liangjun Liao)
+4. Permutation Test (by Kaiyu Huang)
+5. Bootstrapping Resampling & Bootstrap Confidence Interval (by Kaiyu Huang)
