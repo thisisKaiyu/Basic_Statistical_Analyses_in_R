@@ -1,0 +1,734 @@
+---
+title: "R statistics"
+date: "7/28/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# 1.Descriptive statistics (by Kaiyu)
+
+```{r}
+# Load data
+mydata <- mtcars
+mydata
+```
+
+### There are several R functions designed to provide a range of descriptive statistics at once. For example:
+
+## **(1) summary()**
+
+-   mean,median,25th and 75th quartiles,min,max
+
+```{r}
+summary(mydata)
+```
+
+## **(2) psych::describe()**
+
+-   output: item name ,item number, nvalid, mean, sd, median, mad, min, max, skew, kurtosis, se
+
+```{r}
+#install.packages('psych') 
+#install.packages("psych", repos = "https://personality-project.org/r/", type="source")
+library(psych)
+describe(mydata)
+```
+
+### psych package is also used for generating summary statistics by *grouping* variables, for example:
+
+```{r}
+library(psych)
+psych::describeBy(mydata,group = 'vs')
+```
+
+## **(3) table() & prop.table()**
+
+-   table() function can be used to quickly create frequency tables.
+
+### Example 1:Frequency Table for One Variable
+
+```{r}
+table(mydata$mpg)
+```
+
+### Example 2: Frequency Table of Proportions for One Variable
+
+```{r}
+prop.table(mydata$mpg)
+```
+
+### Example 3: Frequency Table for 2 Variables
+
+```{r}
+table(mydata$mpg,mydata$cyl)
+```
+
+### Example 4: Frequency Table of Proportions for Two Variables & only display two decimal places
+
+```{r}
+options(digits=2)
+prop.table(table(mydata$mpg,mydata$cyl))
+```
+
+## **(4) aggregate()**
+
+-   This example aggregates data frame mtcars by cyl and vs, returning means (FUN can be customized to return other statistical variables like sd, sum etc).
+-   FUN: a function to compute the summary statistics which can be applied to all data subsets.
+
+```{r}
+### for numeric variables
+attach(mydata)
+aggdata <-aggregate(mydata, by=list(cyl,vs),
+  FUN=mean, na.rm=TRUE)
+print(aggdata)
+detach(mydata)
+```
+
+# 2. T tests (by Longfei)
+
+## **(1) One-Sample t-test**
+
+```{r}
+# Prerequisites
+library(datarium)
+packages <- c('tidyverse','ggpubr','rstatix','datarium')
+#install.packages(packages)
+lapply(packages, library, character.only = TRUE)
+
+# Demo data
+# Load and inspect the data
+data(mice, package = "datarium")
+head(mice, 3)
+
+# Summary statistics
+mice %>% get_summary_stats(weight, type = "mean_sd")
+
+# Visualization
+bxp <- ggboxplot(
+  mice$weight, width = 0.5, add = c("mean", "jitter"), 
+  ylab = "Weight (g)", xlab = FALSE
+)
+bxp
+
+# Identify outliers
+mice %>% identify_outliers(weight)
+
+# Check normality assumption
+mice %>% shapiro_test(weight)
+ggqqplot(mice, x = "weight")
+
+# Computation
+stat.test <- mice %>% t_test(weight ~ 1, mu = 25)
+stat.test
+
+# Effect size
+mice %>% cohens_d(weight ~ 1, mu = 25)
+
+# Report
+bxp + labs(
+  subtitle = get_test_label(stat.test, detailed = TRUE)
+)
+ggdensity(mice, x = "weight", rug = TRUE, fill = "lightgray") +
+  scale_x_continuous(limits = c(15, 27)) +
+  stat_central_tendency(type = "mean", color = "red", linetype = "dashed") +
+  geom_vline(xintercept = 25, color = "blue", linetype = "dashed") + 
+  labs(subtitle = get_test_label(stat.test,  detailed = TRUE))
+
+```
+
+## **(2) Independent samples t-test**
+
+```{r}
+# Demo data
+# Load the data
+data("genderweight", package = "datarium")
+# Show a sample of the data by group
+set.seed(123)
+genderweight %>% sample_n_by(group, size = 2)
+
+#Summary statistics
+genderweight %>%
+  group_by(group) %>%
+  get_summary_stats(weight, type = "mean_sd")
+
+#Visualization
+bxp <- ggboxplot(
+  genderweight, x = "group", y = "weight", 
+  ylab = "Weight", xlab = "Groups", add = "jitter"
+)
+bxp
+
+# Identify outliers by groups
+genderweight %>%
+  group_by(group) %>%
+  identify_outliers(weight)
+
+# Check normality by groups
+# Compute Shapiro wilk test by goups
+data(genderweight, package = "datarium")
+genderweight %>%
+  group_by(group) %>%
+  shapiro_test(weight)
+# Draw a qq plot by group
+ggqqplot(genderweight, x = "weight", facet.by = "group")
+
+# Check the equality of variances
+genderweight %>% levene_test(weight ~ group)
+
+# Computation
+stat.test <- genderweight %>% 
+  t_test(weight ~ group) %>%
+  add_significance()
+stat.test
+stat.test2 <- genderweight %>%
+  t_test(weight ~ group, var.equal = TRUE) %>%
+  add_significance()
+stat.test2
+
+# Effect size
+# Cohen’s d for Student t-test
+genderweight %>%  cohens_d(weight ~ group, var.equal = TRUE)
+# Cohen’s d for Welch t-test
+genderweight %>% cohens_d(weight ~ group, var.equal = FALSE)
+
+# Report
+stat.test <- stat.test %>% add_xy_position(x = "group")
+bxp + 
+  stat_pvalue_manual(stat.test, tip.length = 0) +
+  labs(subtitle = get_test_label(stat.test, detailed = TRUE))
+
+```
+
+## **(3) Paired samples t-test**
+
+```{r}
+# Demo data
+# Wide format
+data("mice2", package = "datarium")
+head(mice2, 3)
+# Transform into long data: 
+# gather the before and after values in the same column
+mice2.long <- mice2 %>%
+  gather(key = "group", value = "weight", before, after)
+head(mice2.long, 3)
+
+# Summary statistics
+mice2.long %>%
+  group_by(group) %>%
+  get_summary_stats(weight, type = "mean_sd")
+
+# Visualization
+bxp <- ggpaired(mice2.long, x = "group", y = "weight", 
+                order = c("before", "after"),
+                ylab = "Weight", xlab = "Groups")
+bxp
+
+# Assumptions and preliminary tests
+mice2 <- mice2 %>% mutate(differences = before - after)
+head(mice2, 3)
+
+# Identify outliers
+mice2 %>% identify_outliers(differences)
+
+# Check normality assumption
+# Shapiro-Wilk normality test for the differences
+mice2 %>% shapiro_test(differences) 
+# QQ plot for the difference
+ggqqplot(mice2, "differences")
+
+# Computation
+stat.test <- mice2.long  %>% 
+  t_test(weight ~ group, paired = TRUE) %>%
+  add_significance()
+stat.test
+
+# Effect size
+mice2.long  %>% cohens_d(weight ~ group, paired = TRUE)
+
+# Report
+stat.test <- stat.test %>% add_xy_position(x = "group")
+bxp + 
+  stat_pvalue_manual(stat.test, tip.length = 0) +
+  labs(subtitle = get_test_label(stat.test, detailed= TRUE))
+
+# Summary
+# One-sample t-test
+mice %>% t_test(weight ~ 1, mu = 25)
+# Independent samples t-test
+genderweight %>% t_test(weight ~ group)
+# Paired sample t-test
+mice2.long %>% t_test(weight ~ group, paired = TRUE)
+```
+
+# 3. Correlation & Regression analysis (by Liangjun)
+
+```{r}
+## load data
+mydata<-mtcars
+mydata
+```
+
+## (1) Correlation Analysis (e.g.diso vs mpg)
+
+## \*cor(x,y,use="everything","complete.obs","all.obs"or"pairwise.complete.obs",method="pearson","spearman"or"kendall"), options of "use="here refers to different methods it could use to deal with missing data.
+
+## this command will give you the result of "r" value but not the "p" value
+
+```{r}
+
+cor(mydata$disp,mydata$mpg, use="everything", method="pearson")
+
+## if you need to see more details such as correlation coeficient, you can use cor.test()
+
+cor.test(mydata$disp,mydata$mpg,method = "pearson")
+
+## if you want to check the pearson correlation coefficient in a scatter plot (disp vs mpg in this example) (through "ggpubr" package)
+
+library("ggpubr")
+f <- ggplot(mydata, aes(disp,mpg))
+
+S <- f + geom_jitter(size=3.5)+
+  geom_smooth(method="lm",color="black",fill="grey",formula=y~x,size=1.5)+
+  stat_cor(method="pearson",cor.coef.name = "r",label.x=0.2,label.y=50,size=5)  
+ 
+S
+
+```
+
+\#\#\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~
+
+## (2) Partial correlation
+
+## which reduce the effects of other variants when you want to check the relationship between two variants you are interest in (disp vs cyl, regress out wt, drat, in this example)
+
+## \*"ggm" package is required, command: pcor(c("a", "b", "x", "y", "z"), var(mydata)), partial corr between a and b, controlling for x, y, z
+
+## \*\*Example 1, calculate the correlation between "disp" and "mpg"
+
+```{r}
+
+#install.packages("ggm")
+library("ggm")
+mydata<-mtcars
+pcor(c("disp", "mpg", "wt", "drat"), var(mydata))
+
+## you will only get r value from previous code, then you can use pcor.test() to do a hypothesis test base on the result above
+## pcor.test (data, control variable number, sample size)
+
+pc<-pcor(c("disp", "mpg", "wt", "drat"), var(mydata))
+pcor.test(pc,1,32)
+
+```
+
+## or you can use "ppcor" package: pcor.test(x,y,z, method="pearson"/"kendall"/ "spearman"),regress out 'z' to see the correlation between 'x' and 'y'
+
+## \*\*Example 2, analize using "ppcor" packages
+
+```{r}
+library(ppcor)
+pcor.test(mydata$disp,mydata$mpg,mydata$wt,method = "pearson")
+```
+
+\#\#\*Comparing two packages: "ggm" can regresse out more than one variable, but can only use "pearson" as its correlation method; "ppcor" can only regress out one variable, but can choose other method for correlation.
+
+## \*Note that partial correlation related command, pcor() & pcor.test, can be performed via either "ggm" package or "ppcor" package, in different usage.It's usage depends on their loading sequence,the laster one will cover the former one. For example, you load "ppcor" after "ggm", then the commands will have to be used in "ppcor"-way, errors will be reported if you try to use it in "ggm"-way
+
+## unless you unattach "ppcor" packages.Code to unattach a package: detach()
+
+    detach(package:ppcor)
+    library("ggm")
+    mydata<-mtcars
+    pcor(c("disp", "mpg", "wt", "drat"), var(mydata))
+
+## \*\*Example 3: polt the partial correlation (use ggplot2 package to polt the graph):
+
+```{r}
+
+dispt_resid<-resid(lm(mydata$disp~mydata$wt))
+mpg_resid<-resid(lm(mydata$mpg~mydata$wt))
+
+F<-ggplot(mydata, aes(dispt_resid,mpg_resid))
+S<-F + geom_jitter(size=3.5)+
+  geom_smooth(method="lm",color="black",fill="grey",formula=y~x,size=1.5)+ 
+	stat_cor(method="pearson",cor.coef.name = "r",label.x=0.2,label.y=50,size=5) 
+ 
+S
+ 
+```
+
+\#\#\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~
+
+## (3) Regression Analysis
+
+## \*\*Example 1: scatter plot (e.g. disp vs mpg, assume that disp is independent variable, mpg is dependent variable)
+
+```{r}
+scatter.smooth(x=mtcars$disp, y=mtcars$mpg, main="disp~mpg", xlab = "disp", ylab="mpg")
+
+## linear regression model, lm(dpendent varable~independent variable, data= data.name)
+## use lm()
+
+Lm<-lm(mpg~disp, data = mydata)
+print(Lm)
+
+## The simple linear regression equation is: Y = b1 + b2X +e, we can use the results above to fit the equation, so mpg=-0.04112+29.59985*disp
+
+## And you can get the summary of linear regression by using summary()
+summary(Lm)
+
+```
+
+\#\#\*\*Example 2: multiple linear regression (e.g. mpg vs disp&wt, mpg is denpendent varable, disp and wt are independent variables)
+
+```{r}
+
+multiple <- lm(mpg~disp+wt, data=mydata)
+summary(multiple)
+
+```
+
+## The equation of multiple linear regression is y = c0 + c1*x1 + 2*c2*x2+3*c3*x3...+n*Cn*Xn, combine with the result above, mpg=34.96-0.018*disp-2*3.35*wt
+
+## \*\*Example 3, logistic regression
+
+## Dependent variable should be binary (True/False, 0/1), such as "am" in mydata
+
+## use glm() function
+
+```{r}
+
+Logistic <- glm(formula=am~hp+wt+cyl, data=mydata, family = binomial)
+
+print(summary(Logistic))
+
+## the result above indicates that only "wt" affects "am" value (p<0.05)
+
+## (a) Predict technique
+str(mydata)
+table(mydata$am)
+
+## split data into training and testing data
+library(caTools)
+
+set.seed(88)
+split<-sample.split(mydata$am, SplitRatio = 0.59)
+qt<-subset(mydata,split==TRUE)
+qs<-subset(mydata,split==FALSE)
+
+## qt has training set sample data and qs has test set sample data
+## Next using Summary () gives the details of deviance and co-efficient tables for regression analysis
+
+Logistic<-glm(formula=am~hp+wt+cyl, data=qt, family = binomial)
+print(summary(Logistic))
+predicttrain<-predict(Logistic,type="response")
+summary(predicttrain)
+
+## To compute the average for the true probabilities tapply() function
+tapply(predicttrain,qt$am, mean)
+
+## (b) Calculating Threshold Value
+## if P is > T– prediction is poor Special MM; if P is <T– Prediction is good
+
+table(qt$am,predicttrain >0.7)
+
+## Compute Sensitivity and Specificity, 11/11=1; 8/8=1
+
+## test set data prediction
+predictest<-predict(Logistic, type = "response", newdata = qs)
+table(qs$am,predictest >= 0.7)
+```
+
+## Then calculate the accuracy: (7+4)/13=0.846
+
+## \*\*Example 4, possion regression,used for predictive analysis where there are multiple numbers of possible outcomes expected which are countable in numbers
+
+## we use another set of data for this example
+
+```{r}
+library(robust)
+data("stack.dat",package="robust")
+stack.dat
+
+fit<-glm(Loss~.,data=stack.dat, family = poisson(link="log"))
+summary(fit)
+
+## Air flow and Water.Temp have p value <0.05, so their changes will affect "Loss"
+## Next you can calculate the coefficient to explain the model.
+
+exp(coef(fit))
+
+## The results indicate that every one unit of Air flow increase will cause 3% of loss, one unit of Water.Temp increase will causes 8% loss. (Acid.Conc can be ignored here as it's changes don't affect Loss)
+
+## Check if there is over dispersion, by useing "qcc" package
+
+#install.packages("qcc")
+library("qcc")
+qcc.overdispersion.test(stack.dat$Loss, type = "poisson")
+
+## P value < 0.05 so there is overdispersion
+## if there is overdispersion, we need to replace "possion" by "quasipossion" in glm() 
+
+fit2<-glm(Loss~.,data=stack.dat, family = quasipoisson(link="log"))
+summary(fit2)
+```
+
+\#\#\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~\~
+
+## (4) Cluster analysis (using Kmeans)
+
+## \*\*For example, we want to seperate data via "mpg" and "wt"
+
+```{r}
+library(dplyr) #"dplyr" is for the select() function here
+mydata <- mtcars
+K <- dplyr::select(mydata,mpg,wt)
+head(K)
+
+ ## Load factoextra package, to measure the center (how many cluster it should be)
+
+library(factoextra)
+fviz_nbclust(K,kmeans,method = "wss")
+
+## It coulde be split in to 3 cluster
+## Then use kmeans() function, kmeans(data.name, center= )
+
+cl<-kmeans(K,center=3)
+
+## See the details of the cluster analysis result (which group is each object in through cl$cluster and how many objects in each group through cl$size)
+
+head(cl)
+cl$cluster
+cl$size
+
+## plot the result
+fviz_cluster(object = cl,data=K)
+
+```
+
+# 4. Permutation Test (by Kaiyu)
+
+In simple words, the permutation hypothesis test in R is a way of comparing a ***numerical value of 2 groups***.
+
+The permutation Hypothesis test is an alternative to:
+
+-   Independent two-sample t-test
+-   Mann-Whitney U aka Wilcoxon Rank-Sum Test
+
+```{r}
+# Load data
+d <- chickwts[49:71,]
+print(d)
+
+# check the names
+names(d)
+levels(d$feed)
+
+#how many observations in each diet?
+table(d$feed)
+
+#let's look at a boxplot of weight gain by those 2 diets
+boxplot(d$weight~d$feed, las = 1, 
+        ylab = "weight (g)", 
+        xlab = "feed",
+        main = "Weight by Feed")
+
+# calculate the difference in sample MEANS & their absolute diff
+mean(d$weight[d$feed == "casein"]) # mean for casein
+mean(d$weight[d$feed == "meatmeal"]) # mean for meatmeal
+test.stat1 <- abs(mean(d$weight[d$feed == "casein"]) - 
+                  mean(d$weight[d$feed == "meatmeal"]))
+test.stat1
+
+
+# calculate the difference in sample MEDIANS & their abs diff
+median(d$weight[d$feed == "casein"]) # median for casein
+median(d$weight[d$feed == "meatmeal"]) # median for meatmeal
+
+test.stat2 <- abs(median(d$weight[d$feed == "casein"]) - 
+                  median(d$weight[d$feed == "meatmeal"]))
+test.stat2
+
+```
+
+```{r}
+########################
+### Permutation Test ###
+########################
+
+set.seed(1979)  #for reproducability of results
+n <- length(d$feed) #the number of observations to sample
+P <- 100  #the number of permutation samples to take.eg 1000,100000
+variable <- d$weight  #the variable we will resample from 
+PermSamples <- matrix(0, nrow = n, ncol = P) #initialize a matrix to store the permutation data
+n
+P
+variable
+dim(PermSamples)
+```
+
+```{r}
+#each column is a permutation sample of data
+#now, get those permutation samples, using a loop
+#let's take a moment to discuss what that code is doing
+
+for(i in 1:P)
+  {
+    PermSamples[, i] <- sample(variable, 
+                               size = n, 
+                               replace = FALSE)
+}
+
+# we can take a quick look at the first 5 columns of PermSamples (P(=100) columns in total)
+PermSamples[, 1:5]
+
+
+# let's calculate the test-statistics for permutation samples
+# first, initialize empty vectors to store all of the Test-stats
+Perm.test.stat1 <- Perm.test.stat2 <- rep(0, P) 
+
+# loop thru, and calculate the test-stats
+for (i in 1:P)
+  {
+    # calculate the perm-test-stat1 and save it
+    Perm.test.stat1[i] <- abs(mean(PermSamples[d$feed == "casein",i])
+                              - mean(PermSamples[d$feed ==
+                                                   "meatmeal",i]))
+      
+    # calculate the perm-test-stat2 and save it
+    Perm.test.stat2[i] <- abs(median(PermSamples[d$feed=="casein",i])
+                              - median(PermSamples[d$feed ==
+                                                     "meatmeal",i]))
+}
+
+## plot of results
+p <- hist(Perm.test.stat1,col='grey', main="Permutation Distribution", xlab='')
+abline(v=test.stat1, col="red")
+p
+```
+
+```{r}
+#Take a look at the first 15 permutation-TEST STATS for 1 and 2
+test.stat1
+test.stat2
+round(Perm.test.stat1[1:15], 1) 
+round(Perm.test.stat2[1:15], 1)
+
+# Definition Note:p-value for permuation test:what is the probability of getting the observed test statistic or larger (test.stat >= 46.67 or 79) if the null hypothesis (test.stat = 0)is true?
+
+#### p-value = M(Perm.test.stat >= test.stat)/N(total number of Perm.test.stat) ###
+
+#and, let's calculate the permutation p-value; notice how we can ask R a true/false question
+M_15 <- (Perm.test.stat1 >= test.stat1)[1:15]
+M_15
+#and if we ask for the mean of all of those,it treats 0 = FALSE, 1 = TRUE (3/15)
+p_mean_15 <- mean((Perm.test.stat1 >= test.stat1)[1:15])
+p_mean_15
+#Calculate the p-value, for all P = 100 (probability getting the observed statistics or larger)
+p_mean <- mean(Perm.test.stat1 >= test.stat1)
+p_mean
+#and, let's calculate the p-value for option 2 of the test statistic (abs diff in medians)
+p_median <- mean(Perm.test.stat2 >= test.stat2)
+p_median
+
+
+## Finally, draw a conclusion:if p-value >= 0.05, cannot reject H0;if p-value <= 0.05, reject H0, sig. difference.
+```
+
+```{r}
+table(d$weight)
+
+#DENSITY PLOT:(Yc and Ym represent the means for each of the permutation samples
+p1 <- plot(density(Perm.test.stat1),
+     xlab=expression(group("|", bar(Yc)-bar(Ym),"|")))
+
+p2 <- plot(density(Perm.test.stat2),
+     xlab=expression(group("|", bar(Yc)-bar(Ym),"|")))
+```
+
+------------------------------------------------------------------------
+
+# 5.Bootstrapping Resampling & Bootstrap Confidence Interval
+
+Bootstrapping is a non-parametric statistical method for inference about a population using sample data.
+
+For demonstration purposes, we are going to use the ChickWeight dataset due to simplicity and availability as one of the built-in datasets in R.
+
+```{r}
+# View the first row of the ChickWeight dataset
+d <- ChickWeight
+head(d,1)
+```
+
+We want to estimate the correlation between **weight** and **Time** 
+
+**Steps to Compute the Bootstrap CI in R:**
+
+```{r}
+# 1. Import the boot library for calculation of bootstrap CI and ggplot2 for plotting.
+library(boot)
+library(ggplot2)
+```
+
+```{r}
+# 2. Create a function that computes the statistic we want to use such as mean, median, correlation, etc.
+# Custom function to find correlation between the weight and Time
+corr.fun <- function(data, idx)
+{
+  df <- data[idx, ]
+ 
+  # Find the spearman correlation between
+  # the 1st and 4th columns of dataset
+  c(cor(df[,1], df[,2], method = 'spearman'))
+}
+```
+
+```{r}
+# 3. Using the boot function to find the R bootstrap of the statistic.
+set.seed(42)# Setting the seed for reproducability of results
+
+bootstrap <- boot(d, corr.fun, R = 100)# Calling the boot function with the dataset our function and no. of rounds
+ 
+bootstrap # Display the result of boot function
+```
+
+```{r}
+# 4. We can plot the generated bootstrap distribution using the plot command with calculated bootstrap.
+plot(bootstrap)# Plot the bootstrap sampling distribution using ggplot
+```
+
+```{r}
+# 5. Using the boot.ci() function to get the confidence intervals.
+boot.ci(boot.out = bootstrap,
+        type = c("norm", "basic","perc")) # Function to find the bootstrap Confidence Intervals
+```
+
+------------------------------------------------------------------------
+
+### Reference
+
+**Part 2 T-test**
+
+<https://www.datanovia.com/en/lessons/t-test-in-r/>
+
+**Part 4 Permutation Hypothesis Test in R with Examples:**
+
+[<https://www.youtube.com/watch?v=xRzEWLfEEIA&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=7>](https://www.youtube.com/watch?v=xRzEWLfEEIA&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=7){.uri}
+
+[<https://www.geeksforgeeks.org/permutation-hypothesis-test-in-r-programming/>](link%20url)
+
+**Part 5 Bootstrapping Resampling & Bootstrap Confidence Interval**
+
+[\<https://www.geeksforgeeks.org/bootstrap-confidence-interval-with-r-programming/\>](https://www.geeksforgeeks.org/bootstrap-confidence-interval-with-r-programming/){.uri}
+
+**Bootstrap Hypothesis Testing in R with Example:**
+
+[\<https://www.youtube.com/watch?v=Zet-qmEEfCU&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=4\>](https://www.youtube.com/watch?v=Zet-qmEEfCU&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=4){.uri}
+
+**Bootstrap Confidence Interval with R:**
+
+[\<https://www.youtube.com/watch?v=Om5TMGj9td4&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=5\>](https://www.youtube.com/watch?v=Om5TMGj9td4&list=PLqzoL9-eJTNDp_bWyWBdw2ioA43B3dBrl&index=5){.uri}
+
+<https://rpubs.com/riddhigupta1357/919205>
+
+<https://data-flair.training/blogs/bootstrapping-in-r/>
